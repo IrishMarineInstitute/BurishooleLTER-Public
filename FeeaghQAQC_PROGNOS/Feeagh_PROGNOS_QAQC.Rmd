@@ -1,0 +1,239 @@
+Elvira de Eyto and Tadhg Moore, March 2019
+
+This is a QA/QC script for use with the FEEAGh AWQMS (automatic water Quality monitoring station). Starting from the 1st january 2018, Data from this station are currently accesible through the marine Institute's ERDDAP server. https://erddap.marine.ie/erddap/index.html (Newport Buoys hiRes). 
+
+Pre 2018 data are available on request https://www.marine.ie/Home/marine-institute-request-digital-data
+
+```{r}
+library(mgcv)
+library(lubridate)
+library(rLakeAnalyzer)
+library(data.table)#need data.table library
+#following function basically allows to replace values outside of a user defined range as NA
+outlierReplace = function(dataframe, cols, rows, newValue = NA) {
+  if (any(rows)) {
+    set(dataframe, rows, cols, newValue)
+  }
+}
+
+
+#####In Errdaap, select the time period and variables that you want to download, and download as a csv. I have an example file here that is for most of 2018. It contains the water profile data for the lake.#####
+
+###set your working directory to the file includindg your data dowload.
+setwd( "C:/THISSHOUD be your WD filepath")
+fgh <- read.csv('IMINewportBuoys_6b5d_6bce_7843.csv')
+##this is the file thatw as dowloaded from ERDDDAP - change the name if you dowloand a new dataset###
+fgh <- fgh[-1,]
+print(summary(fgh))
+```
+
+Convert factors to numeric 
+```{r}
+fact.col <- names(Filter(is.factor,fgh))[-1]
+#Convert factors to columns
+for(i in fact.col){
+  fgh[,i] <- as.numeric(as.character(fgh[,i]))
+  print(paste0(i,' converted from factor to numeric'))
+}
+```
+
+
+
+Convert time to Datetime object and inspect for NA's
+Give us the time range
+```{r}
+fgh$time <- as.character(fgh$time) #Convert from factor to character
+fgh$time <- gsub('T',' ',fgh$time) #Remove the T 
+fgh$time <- gsub('Z','',fgh$time) #Remove the Z
+
+#Select which datetime format for formatting the date time
+if(!is.na(as.POSIXct(fgh$time[nrow(fgh)], format = '%d/%m/%Y %H:%M:%S'))){
+  fmt = '%d/%m/%Y %H:%M:%S'
+}else if(!is.na(as.POSIXct(fgh$time[1], format = '%Y-%m-%d %H:%M:%S'))){
+  fmt = '%Y-%m-%d %H:%M:%S'
+}
+
+fgh$time <- as.POSIXct(fgh$time, format = fmt, tz = 'UTC') #Format into datetime
+date.na = sum(is.na(fgh$time))
+print(paste0('Start: ', range(fgh$time, na.rm = T)[1], '; End: ', range(fgh$time, na.rm = T)[2]))
+print(paste('No. of NAs in time:',date.na))
+```
+
+Check timesteps - fix if neccessary. The feeagh AWQMS recors in 2 min intervals
+```{r}
+print(dim(fgh))
+print(summary(fgh$time))
+dates = seq(from = range(fgh$time)[1],to = range(fgh$time)[2], by =120)
+dif <- as.numeric(fgh[2:nrow(fgh),'time']-fgh[1:(nrow(fgh)-1),'time'])
+sam <- fgh[order(fgh[,'time']),]
+if(length(dates) != nrow(fgh)){
+  df = data.frame(time = dates,
+               test =rep(NA,length(dates)), 
+               stringsAsFactors=FALSE) 
+  df = merge(df,sam, by ='time', all.x = T)
+  df$test <- NULL
+  fgh <- df
+  print('Filled in missing dates with NAs')
+}
+dif2 <- fgh[2:nrow(fgh),'time']-fgh[1:(nrow(fgh)-1),'time']
+if(max(dif)>2 | min(dif) < 2){
+  par(mfrow=c(2,1))
+  plot(dif, main = 'Time Difference - Raw', ylab = 'sec')
+  plot(dif2, main = 'Time Difference - Corrected', ylab = 'sec')
+  print('Timestep has been corrected')
+}
+sam <- NULL
+if(date.na != 0){
+  snd.na = sum(is.na(fgh$Sonde_Temperature))
+  anem.na = sum(is.na(fgh$Anemometer))
+  if(date.na == snd.na & date.na == anem.na){
+    dates = seq(fgh$time[1], fgh$time[nrow(fgh)], by = 120)
+  }
+}
+
+```
+
+Replace Nan with NA
+```{r}
+for(i in 2:ncol(fgh)){
+  n = which(is.nan(fgh[,i]))
+  #print(n) ##To check the file
+#}
+  if(length(n) == 0){
+    print(paste('No NaN in',colnames(fgh)[i]))
+    next
+  }else{
+    fgh[n,i] <- NA
+    print(paste('NaN replaced with NAs in',colnames(fgh)[i]))
+  }
+}
+```
+
+Take out unneccessary columns
+```{r}
+clm <- c(0)
+for(i in 1:ncol(fgh)){
+  if(sum(is.na(fgh[,i]))== nrow(fgh)){
+    clm <- append(clm,i)
+  }
+}
+if(length(clm)==1){
+  print("No unneccessary columns")
+}else if(length(clm)>1){
+  fgh <- fgh[,-clm]
+  print(paste("Removed column ", colnames(fgh)[i]))
+}
+
+```
+
+Inspect water data and create wtemp for LakeAnalyzer
+
+```{r}
+names(fgh)
+wt.col <- c("time","sonde_temperature","water_temp_2pt5m",
+               "water_temp_5m","water_temp_8m",
+               "water_temp_11m","water_temp_14m","water_temp_16m",
+               "water_temp_18m","water_temp_20m","water_temp_22m",
+               "water_temp_27m","water_temp_32m","water_temp_42m") 
+
+wtemp = fgh[,wt.col]
+depth =c(0.9,2.5,5,8,11,14,16,18,20,22,27,32,42)
+
+colnames(wtemp) <- c('datetime', paste0('wtr_',depth))
+wtr.lineseries(wtemp)
+```
+
+fix any outlier temperatures and make a line plot
+```{r}
+for(i in c(2:14)){
+  n <- which(wtemp[,i] < 3.5 | wtemp[,i] >30)
+  wtemp[n,i] <- NA
+  
+}
+wtr.lineseries(wtemp)
+##need to be a little more specific for the winter temps
+
+ind = which(wtemp[,1] <= '2018-04-01')
+ 
+for(i in c(2:14)){
+  n <- which(wtemp[ind,i] < 3.5 | wtemp[ind,i] >7)
+  wtemp[n,i] <- NA
+}
+wtr.lineseries(wtemp)
+
+```
+replace sonde temp between   31/01/2017 17:58:00     and        20/03/2018  10:58:00      with NA
+
+this is a very secific propblme for early 2018 - for other time seris, you can skip this step, or modify if you spot a particular data chunk with an error
+```{r}
+wtemp[2][wtemp$datetime >= "2018-01-31 17:58:00" & wtemp$datetime <= "2018-03-20 10:58:00",] = as.data.frame(lapply(wtemp[2][wtemp$datetime >= "2018-01-31 17:58:00" & wtemp$datetime <= "2018-03-20 10:58:00",], function(x) x ="NA"))
+
+ wtr.lineseries(wtemp)
+ ##seems to introduce two very low valuesa t the start and ed of the data chunk.
+ ###replace with NA
+ for(i in c(2:14)){
+  n <- which(wtemp[ind,i] < 3.5)
+  wtemp[n,i] <- NA
+}
+wtr.lineseries(wtemp)
+ 
+```
+
+##add 0.6 deg to the prt chain. this is the offset that Harriet Wilson has determined the PRTS are currently out by. The 0.9 temperature (read formt he sonde) does not need this offset.
+
+```{r}
+wtemp[3:14][wtemp$datetime >= "2018-01-01 00:00:00" & wtemp$datetime <= "2018-11-13 13:08:00",] = as.data.frame(lapply(wtemp[3:14][wtemp$datetime >= "2018-01-01 00:00:00" & wtemp$datetime <= "2018-11-13 13:08:00",], function(x) x + 0.6))
+ wtr.lineseries(wtemp)
+ summary(wtemp)
+```
+ 
+ save the files for future use. These will save to your working directory
+```{r}
+###with NAs
+write.csv(wtemp,'feeagh_wtemp_2min_NA.csv', row.names = F, quote = F)
+
+###without NAs (GOTM doesnt accept rows with NAs)
+wtemp2 = na.exclude(wtemp)
+write.csv(wtemp2,'feeagh_wtemp_2min.csv', row.names = F, quote = F)
+
+```
+ 
+ 
+Subset to hourly - just if you want to run lake anlayzer quickly. You can also do it with  the minute files (as below)
+save the files for future use, with and without NAs. These will save to your working directory
+```{r}
+wtemp$min <- minute(wtemp[,1])
+wtemp.hr <- wtemp[(wtemp$min == 0),1:14]
+wtemp.hr[which(wtemp.hr$wtr_0.9 <3.5),2] <- NA
+wtemp$min <- NULL
+wtr.lineseries(wtemp.hr)
+
+summary(wtemp.hr)
+
+write.csv(wtemp.hr,'feeagh_wtemp_1hr_NA.csv', row.names = F, quote = F)
+wtemp2.hr = na.exclude(wtemp.hr)
+write.csv(wtemp2.hr,'feeagh_wtemp_1hr.csv', row.names = F, quote = F)
+
+```
+
+
+
+
+Plot Schmidt Stability - need to load Feeagh bathymetry
+```{r}
+
+
+feeagh.bath <- load.bathy('feeaghSR.bth')
+
+fgh.ss <- ts.schmidt.stability(wtemp, feeagh.bath)
+
+plot(fgh.ss$datetime, fgh.ss$schmidt.stability, type ='l', ylab = 'Schimdt Stability (J/m2)')
+
+```
+if you want to save as a .wtr file 
+
+```{r}
+write.csv(wtemp,'feeagh2018.wtr', row.names = F, quote = F)
+```
+
+
