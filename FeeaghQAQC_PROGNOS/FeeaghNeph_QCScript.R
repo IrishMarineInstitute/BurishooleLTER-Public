@@ -27,7 +27,8 @@ plot(feeNph15$date, feeNph15$neph,type='l') # straight off, averaging smooths ou
 abline(h=c(40,125)) # looks reasonable to cut above and below
 
 library(data.table)
-outlierReplace = function(dataframe, cols, rows, newValue = NA) {if (any(rows)) {set(dataframe, rows, cols, newValue)}} # define function to exclude values outside a user defined range
+outlierReplace = function(dataframe, cols, rows, newValue = NA) {if (any(rows)) {set(dataframe, rows, cols, newValue)}} # define function
+# to exclude values outside a user defined range
 
 outlierReplace(feeNph15, "neph", which(feeNph15$neph < 40,NA)) # set values to NA
 outlierReplace(feeNph15, "neph", which(feeNph15$neph > 125,NA))
@@ -60,29 +61,40 @@ x <- na_locf(x) # i.e. 'replace missing values by carrying the last available va
 xs <- rollmean(x, k=15*4*6, # here I go with 6 hours (set by k)
          align = 'center',na.pad=TRUE) # centre it (a trailing/leading not as applicable here)
 xs <- na_locf(xs, option = "locf", na_remaining = "rev") # pad out beginning and end of series with last value
-lines(t,xs,col='red',type='l') # this is our oversmoothed version - can see that it omits all the 'bad' data but also higher freq. changes that may be valuable
+lines(t,xs,col='red',type='l') # this is our oversmoothed version - can see that it omits all the 'bad' data but 
+# also higher freq. changes that may be valuable to keep
 
 # So, to capture some of the realistic higher frequency detail:
 # base QC version on the difference between the raw and the filtered (over-smooth) dataset.
 
-hist(x-xs, breaks=100, main="") # histogram of raw minus the smoothed version (i.e. how much the raw data departs from a smooth signal, set by the rolling mean)
+hist(x-xs, breaks=100, main="") # histogram of raw minus the smoothed version 
+# (i.e. shows the distribution of raw data departure from a smooth signal, set by the rolling mean)
 n <- length(x)
 
 # define cut-off criteria function:
-A <- 0.3 # this is the key param to decrease/increase sensitivity of keeping/dropping noisey data i.e. increase this to pass more noise, decrease to remove (smoothen)
+A <- 0.3 # this is the key param to decrease/increase sensitivity of keeping/dropping noisey data 
+# i.e. increase this to pass more noise/spikes, decrease to remove (smoothen)
+
 dev <- x - xs
-lambda <- A * qt(1 - 1/(2*n), df=n-1) # take the size of tha dataset into account, when defining a statistical probability that an outlier is actually real
-abline(v=mean(dev) + sd(dev) * lambda*c(-1, 1), lty=2) # data distributed L/R of dashed lines is cut (tweak alpha argument above to visualise for different rejection criteria)
+lambda <- A * qt(1 - 1/(2*n), df=n-1) # take the size of tha dataset into account, 
+# when defining a statistical probability that an outlier is actually real
+
+abline(v=mean(dev) + sd(dev) * lambda*c(-1, 1), lty=2) # data distributed L/R of dashed lines is cut 
+# (tweak alpha argument above to visualise for different rejection criteria)
+
 bad <- which((abs(dev - mean(dev))
               > (lambda * sd(dev)))) # define 'bad' spikes based on a probablility of finding outliers outside the smoothed version
 xx <- x
 xx[bad] <- xs[bad]
 par(mfrow=c(2,1))
 plot(t, x, type="l") # raw unfiltered
-plot(t,xx,type='l') # with 'bad' spikes omitted - the drop-outs in December when the sensor was acting up get filtered out which is handy!
+plot(t,xx,type='l') # with 'bad' spikes omitted - 
+# the drop-outs in December when the sensor was acting up get filtered out which is handy!
 
-# method is by no means perfect (e.g. I wonder if the high spike in December is real?) but perhaps a starting point for automating larger sets of data.
-# remember also that you can tweak how strict the rejection of spikes are by changing A value
+# method is by no means perfect (e.g. I wonder if the high spike in December is real?) but perhaps a starting point 
+# for automating larger sets of data. 
+
+# Remember also that you can tweak how strict the rejection of spikes are by changing 'A' value (line 75)
 
 feeNph15$nephClean <- xx # add in with timestep and noisier version
 
