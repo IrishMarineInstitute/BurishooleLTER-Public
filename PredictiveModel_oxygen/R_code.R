@@ -5,8 +5,12 @@
 ###----------------------------------------------###
 ###----------------------------------------------###
 
-# load necessary libraries (if not installed
-# these must be installed first through command 'install.packages(Package_Name)')
+# install necessary libraries:
+if(!require("zoo")) install.packages("zoo")
+if(!require("dplyr")) install.packages("dplyr")
+if(!require("openair")) install.packages("openair")
+if(!require("randomForest")) install.packages("randomForest")
+# load the libraries:
 library('zoo')
 library("dplyr")
 library("openair")
