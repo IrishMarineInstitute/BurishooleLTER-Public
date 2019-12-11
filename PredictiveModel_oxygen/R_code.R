@@ -37,7 +37,7 @@ cbl = d$msl # msl from ERA5
 varsRF = data.frame(date = date, fw = fw,tauxClew=tauxClew,tauyClew=tauyClew,cbl=cbl) # add to model dataframe
 # create 30-day trailing averages:
 varsRF$fwMA <- rollmean(varsRF$fw,30,fill=median(varsRF$fw),align='right') # also add in a 30 day trailing moving average of freshwater discharge
-varsRF$cblMA <- rollmean(varsRF$cbl,30,fill=median(varsRF$cbl),align='center') # also add in a 30 day trailing moving average of surface pressure
+varsRF$cblMA <- rollmean(varsRF$cbl,30,fill=median(varsRF$cbl),align='right') # also add in a 30 day trailing moving average of surface pressure
 varsRF$tauxClewMA <- rollmean(varsRF$tauxClew,30,fill=median(varsRF$tauxClew),align='right') # also add in a 30 day trailing moving average of tau-x
 varsRF$tauyClewMA <- rollmean(varsRF$tauyClew,30,fill=median(varsRF$tauyClew),align='right') # also add in a 30 day trailing moving average of tau-y
 
