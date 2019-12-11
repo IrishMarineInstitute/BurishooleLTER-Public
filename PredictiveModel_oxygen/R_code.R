@@ -61,10 +61,10 @@ plot(model$date,model$do,type='l',col='red') # can see obvious ventilation event
 # some have gaps between them so need to fill these in.
 
 # using oxygen consumption rate in manuscript, takes ~ 2-3 months to revert to anoxia 
-# i.e. set bottom DO to 0 2 months after a ventilation with missing data and interpolate
-# otherwise get unrealistically long oxygen depletion rate e.g. 2014-2015 gap
-# a ventilation in Sept/Oct then a gap; we will assume anoxic by end of December
-which(model$date=='2014-12-22') # row 313; should be back to anoxic conditions
+# i.e. set bottom DO to zero 2 months after a ventilation with missing data and interpolate
+# otherwise get unrealistically long oxygen depletion rate e.g. for 2014-2015 gap
+# a ventilation occurred in Sept/Oct then a data gap; we will assume anoxic by end of December
+which(model$date=='2014-12-22') # row 313; should be back to anoxic conditions at this point
 model$do[c(1,313,314)] <- c(0.09,0.09,0.09) # set to typical stagnant value
 
 model$doFill <- na.spline(model$do) # now gap fill using a spline function
@@ -73,13 +73,13 @@ lines(model$date,model$doFill,type='l',col='blue') #
 # create a categorical variable for stagnant vs ventilated regime:
 model$doCat <- cut(model$doFill, c(-1,0.9,15),labels=c(0,1)) # 
 # this created two categories; one where bottom oxygen is < 0.9 mg l (stagnant)
-# (and > -1 because the spline goes to minus in one point)
+# (and > -1 to account for spurious values assigned by the spline function)
 # and one where it is greater than 0.9 (with 15 as an upper bound)
 summary(model$doCat) # here 0 is stagnant, 1 is ventilated
 plot(model$date,model$doCat) # see here the 5 ventilation events (2010, 2013, 2014, 2017, 2018)
 
 ###----------------------------------------------###
-# construct the predictive and interpret results
+# construct predictive model and interpret results
 ###----------------------------------------------###
 
 # Now begin to construct the predictive model
