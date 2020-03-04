@@ -20,4 +20,11 @@ data.1 <- data.1[,c(46,39,41,43,45,23)]
 plot(data.1$timestamp,data.1$cbl,type="h",yaxs="i") # good to check nothing strange
 summary(data.1)
 
+### UPDATE ###
+# from February 2019, a new weblink is required to access 1-minute resolution files
+# e.g.
+download.file("https://cli.fusio.net/cli/climate_data/webdata/mindata/mindata_1175_2019_02.zip",temp) # this is the correct address as of 4th March 2020
+data.2 <- read.csv(unz(temp, "data_1min_1175_2019_02.csv")) 
+# this will then assign a 1-minute csv file with the same format as before and can be treated using the same code above from
+# line 10 onwards. 
 
