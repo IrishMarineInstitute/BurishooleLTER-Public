@@ -1,6 +1,7 @@
 # 18 July 2019
 # Sean Kelly
-# Feeagh Surface Nephelometer (turbidity data) data cleaning process
+# Automated approach toward cleaning ('despiking') raw hi-res sensor data from Burrishoole instrumentation
+# Example using Feeagh Surface Nephelometer (turbidity data) data cleaning process
 
 ###
 # Can download Feeagh AWQMS files from http://data.marine.ie/geonetwork/srv/eng/catalog.search#/metadata/ie.marine.data:dataset.3757
@@ -18,8 +19,8 @@ names(feeNeph) <- c('date','neph')
 
 plot(feeNeph$date, feeNeph$neph,type='l') # very noisy/spiky
 
-# first, average to 15 minute segments, as this is the highest frequency available for river flows anyway:
-# NB not necessary to average to use the method below but you will want to play around with the smoothing parameters
+# first, average to 15 minute segments (e.g. the highest frequency available for river flows anyway):
+# N.B. you can skip this averaging step but you will want to play around with the smoothing parameters later on
 
 library(openair) # handy time averaging function
 feeNph15 <- timeAverage(feeNeph,avg.time='15 min') # 
