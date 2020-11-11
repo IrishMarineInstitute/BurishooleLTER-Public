@@ -1,0 +1,219 @@
+
+
+```{r}
+#setwd("C:\\Users\\mooret\\OneDrive - Dundalk Institute of Technology\\PROGNOS_offline-NE122-Mooret\\QAQC")
+library(mgcv)
+library(lubridate)
+library(rLakeAnalyzer)
+library(data.table)#need data.table library
+#following function basically allows to replace values outside of a user defined range as NA
+outlierReplace = function(dataframe, cols, rows, newValue = NA) {
+  if (any(rows)) {
+    set(dataframe, rows, cols, newValue)
+  }
+}
+
+#download.file(url="http://10.11.1.82/erddap/tabledap/IMINewportBuoys.csv?time%2CWater_Temp_2m%2CWater_Temp_5m%2CWater_Temp_8m%2CWater_Temp_11m%2CWater_Temp_14m%2CWater_Temp_16m%2CWater_Temp_18m%2CWater_Temp_20m%2CWater_Temp_22m%2CWater_Temp_27m%2CWater_Temp_32m%2CWater_Temp_42m%2CNephelometer%2CChlorophyll_A%2CCDOM%2CPyranometer%2CAnemometer%2CSonde_Temperature%2CSonde_DOPC%2CSonde_DO_mgl&time%3E=2018-01-01T00%3A00%3A00Z&time%3C=2018-10-08T00%3A00%3A00Z&distinct()",
+#              destfile="C:/Users/edeeyto/Desktop/ERDAPP/test.csv")
+setwd( "C:\\Users\\mooret\\Downloads\\erdapp qaca")
+fgh <- read.csv('IMINewportBuoys_6b5d_6bce_7843.csv')
+fgh <- fgh[-1,]
+print(summary(fgh))
+```
+Convert factors to numeric 
+```{r}
+fact.col <- names(Filter(is.factor,fgh))[-1]
+#Convert factors to columns
+for(i in fact.col){
+  fgh[,i] <- as.numeric(as.character(fgh[,i]))
+  print(paste0(i,' converted from factor to numeric'))
+}
+```
+
+
+
+Convert time to Datetime object and inspect for NA's
+Give us the time range
+```{r}
+fgh$time <- as.character(fgh$time) #Convert from factor to character
+fgh$time <- gsub('T',' ',fgh$time) #Remove the T 
+fgh$time <- gsub('Z','',fgh$time) #Remove the Z
+
+#Select which datetime format for formatting the date time
+if(!is.na(as.POSIXct(fgh$time[nrow(fgh)], format = '%d/%m/%Y %H:%M:%S'))){
+  fmt = '%d/%m/%Y %H:%M:%S'
+}else if(!is.na(as.POSIXct(fgh$time[1], format = '%Y-%m-%d %H:%M:%S'))){
+  fmt = '%Y-%m-%d %H:%M:%S'
+}
+
+fgh$time <- as.POSIXct(fgh$time, format = fmt, tz = 'UTC') #Format into datetime
+date.na = sum(is.na(fgh$time))
+print(paste0('Start: ', range(fgh$time, na.rm = T)[1], '; End: ', range(fgh$time, na.rm = T)[2]))
+print(paste('No. of NAs in time:',date.na))
+```
+Check timesteps - fix if neccessary
+```{r}
+print(dim(fgh))
+print(summary(fgh$time))
+dates = seq(from = range(fgh$time)[1],to = range(fgh$time)[2], by =120)
+dif <- as.numeric(fgh[2:nrow(fgh),'time']-fgh[1:(nrow(fgh)-1),'time'])
+sam <- fgh[order(fgh[,'time']),]
+if(length(dates) != nrow(fgh)){
+  df = data.frame(time = dates,
+               test =rep(NA,length(dates)), 
+               stringsAsFactors=FALSE) 
+  df = merge(df,sam, by ='time', all.x = T)
+  df$test <- NULL
+  fgh <- df
+  print('Filled in missing dates with NAs')
+}
+dif2 <- fgh[2:nrow(fgh),'time']-fgh[1:(nrow(fgh)-1),'time']
+if(max(dif)>2 | min(dif) < 2){
+  par(mfrow=c(2,1))
+  plot(dif, main = 'Time Difference - Raw', ylab = 'sec')
+  plot(dif2, main = 'Time Difference - Corrected', ylab = 'sec')
+  print('Timestep has been corrected')
+}
+sam <- NULL
+if(date.na != 0){
+  snd.na = sum(is.na(fgh$Sonde_Temperature))
+  anem.na = sum(is.na(fgh$Anemometer))
+  if(date.na == snd.na & date.na == anem.na){
+    dates = seq(fgh$time[1], fgh$time[nrow(fgh)], by = 120)
+  }
+}
+
+```
+Replace Nan with NA
+```{r}
+for(i in 2:ncol(fgh)){
+  n = which(is.nan(fgh[,i]))
+  #print(n) ##To check the file
+#}
+  if(length(n) == 0){
+    print(paste('No NaN in',colnames(fgh)[i]))
+    next
+  }else{
+    fgh[n,i] <- NA
+    print(paste('NaN replaced with NAs in',colnames(fgh)[i]))
+  }
+}
+```
+Take out unneccessary columns
+```{r}
+clm <- c(0)
+for(i in 1:ncol(fgh)){
+  if(sum(is.na(fgh[,i]))== nrow(fgh)){
+    clm <- append(clm,i)
+  }
+}
+if(length(clm)==1){
+  print("No unneccessary columns")
+}else if(length(clm)>1){
+  fgh <- fgh[,-clm]
+  print(paste("Removed column ", colnames(fgh)[i]))
+}
+
+```
+
+Inspect water data and create wtemp for LakeAnalyzer
+
+```{r}
+names(fgh)
+wt.col <- c("time","sonde_temperature","water_temp_2pt5m",
+               "water_temp_5m","water_temp_8m",
+               "water_temp_11m","water_temp_14m","water_temp_16m",
+               "water_temp_18m","water_temp_20m","water_temp_22m",
+               "water_temp_27m","water_temp_32m","water_temp_42m") 
+
+wtemp = fgh[,wt.col]
+depth =c(0.9,2.5,5,8,11,14,16,18,20,22,27,32,42)
+
+colnames(wtemp) <- c('datetime', paste0('wtr_',depth))
+wtr.lineseries(wtemp)
+```
+str(wtemp)
+names(wtemp)
+```{r}
+for(i in c(2:14)){
+  n <- which(wtemp[,i] < 3.5 | wtemp[,i] >30)
+  wtemp[n,i] <- NA
+  #outlierReplace(wtemp, "wtr_0.9", which(wtemp$wtr_0.9 > 30,NA))
+}
+wtr.lineseries(wtemp)
+ str(wtemp)
+
+ind = which(wtemp[,1] <= '2018-04-01')
+ 
+for(i in c(2:14)){
+  n <- which(wtemp[ind,i] < 3.5 | wtemp[ind,i] >7)
+  wtemp[n,i] <- NA
+  #outlierReplace(wtemp, "wtr_0.9", which(wtemp$wtr_0.9 > 30,NA))
+}
+wtr.lineseries(wtemp)
+ str(wtemp)
+
+```
+###replace sonde temp between   31/01/2017 17:58:00     and        20/03/2018  10:58:00      with NA
+```{r}
+wtemp[2][wtemp$datetime >= "2018-01-31 17:58:00" & wtemp$datetime <= "2018-03-20 10:58:00",] = as.data.frame(lapply(wtemp[2][wtemp$datetime >= "2018-01-31 17:58:00" & wtemp$datetime <= "2018-03-20 10:58:00",], function(x) x ="NA"))
+
+summary(wtemp)
+
+
+##add 0.6 deg to the prt chain
+
+wtemp[3:14][wtemp$datetime >= "2018-01-01 00:00:00" & wtemp$datetime <= "2018-11-13 13:08:00",] = as.data.frame(lapply(wtemp[3:14][wtemp$datetime >= "2018-01-01 00:00:00" & wtemp$datetime <= "2018-11-13 13:08:00",], function(x) x + 0.6))
+#
+wtemp$wtr_0.9[wtemp$wtr_0.9 < 3.5] <- NA
+
+ wtr.lineseries(wtemp)
+ summary(wtemp)
+```
+ rempve
+ 
+```{r}
+ write.csv(wtemp,'feeagh_wtemp_2min_NA.csv', row.names = F, quote = F)
+wtemp = na.exclude(wtemp)
+write.csv(wtemp,'feeagh_wtemp_2min.csv', row.names = F, quote = F)
+
+```
+ 
+ 
+ 
+ 
+Subset to hourly
+```{r}
+wtemp$min <- minute(wtemp[,1])
+wtemp.hr <- wtemp[(wtemp$min == 0),1:14]
+wtemp.hr[which(wtemp.hr$wtr_0.9 <3.5),2] <- NA
+wtr.lineseries(wtemp.hr)
+
+summary(wtemp.hr)
+
+write.csv(wtemp.hr,'feeagh_wtemp_1hr_NA.csv', row.names = F, quote = F)
+wtemp.hr = na.exclude(wtemp.hr)
+write.csv(wtemp.hr,'feeagh_wtemp_1hr.csv', row.names = F, quote = F)
+
+```
+
+
+
+
+Plot Schmidt Stability - need to load Feeagh bathymetry
+```{r}
+deps <- c(0,6, 12,15,18,21,24,30,37,43,44)
+area <- c(3113090,2997760,2139500,1797700,1379600,1128800,868100,395900,157400,68900,0)
+feeagh.bath = data.frame(depths = deps, areas = area)
+
+#feeagh.bath <- load.bathy('Feeagh.bathy')
+
+fgh.ss <- ts.schmidt.stability(wtemp, feeagh.bath)
+
+plot(fgh.ss$datetime, fgh.ss$schmidt.stability, type ='l')
+
+```
+####fallen at the alst hurdle - not sure how to save all these correction########
+
+ write.table(wtemp,file="2018.wtr", sep=" ")
+
