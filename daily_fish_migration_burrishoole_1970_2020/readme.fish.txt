@@ -17,7 +17,8 @@ decimal degrees
 
 •	"station_id"   
 Can be "Combined_MillRace_SalmonLeap_Trap"; "MillRace_Trap"; "SalmonLeap_Trap".
-If "Combined_MillRace_SalmonLeap_Trap", its the sum of the  "MillRace_Trap" and "SalmonLeap_Trap"
+If "Combined_MillRace_SalmonLeap_Trap", it's the sum of the  "MillRace_Trap" and "SalmonLeap_Trap". 
+For salmon, we provide all three counts.
 
 •	"species"  
 Can be "Salmo salar"; "Salmo trutta"; "Anguilla anguilla
@@ -33,7 +34,7 @@ Upstream indicates moving from Lough Furnace (oceanic) to Lough Feeagh (freshwat
 Downstream indicates moving from Lough Feeagh (freshwater) to Lough Furnace (oceanic)
 
 •	"daily_count" 
-Daily count of fish moving
+Daily count of fish through the trap
 
 
 
