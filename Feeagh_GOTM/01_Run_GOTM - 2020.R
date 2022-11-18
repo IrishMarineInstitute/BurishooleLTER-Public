@@ -1,5 +1,6 @@
 #First set your working directory to the lake folder
 setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+##change this depending  on where youare on your computer 
 setwd("..\\feeagh_2020 - sean")
 
 library(GOTMr)
@@ -54,7 +55,6 @@ system2("run_gotm.bat")
 
 ##If you get the above output, SUCCESS!
 ##You can now run GOTM in R
-
 
 
 
