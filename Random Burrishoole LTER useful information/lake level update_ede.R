@@ -1,3 +1,6 @@
+#E. de Eyto Novemeber 2020
+#use this script to join the dataset from 1976-2018 (correct for the step change in 1997) with the most recent data fromt eh EPA
+#wd here is the Bur_Exp folder but should eb able to do this without access to that 
 
 setwd("S:/Feeagh Hydrographic data from EPA")
 
