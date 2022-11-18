@@ -1,0 +1,407 @@
+---
+title: "Download met data and format for GOTM"
+author: "Tadhg Moore"
+date: "March 09, 2021"
+output: html_document
+---
+
+Install the packages required
+
+```{r}
+remotes::install_github("aemon-j/gotmtools")
+
+install.packages("lubridate")
+install.packages("rLakeAnalyzer")
+install.packages("data.table")
+install.packages("tidyr")
+install.packages("zoo")
+
+```
+
+Load the required libraries
+
+```{r}
+#setwd("C:\\Users\\mooret\\OneDrive - Dundalk Institute of Technology\\PROGNOS_offline-NE122-Mooret\\QAQC")
+library(lubridate)
+library(rLakeAnalyzer)
+library(data.table)#need data.table library
+library(tidyr)
+library(zoo)
+
+```
+
+
+Download met data from Met Eireann & ERDDAP into the same folder as this Rmarkdown file and unzip and read in csv files.
+
+```{r}
+download.file('https://erddap.marine.ie/erddap/tabledap/imiFurnaceWSHourly.csv?time%2CAtmosphericPressure%2CTotalRain%2CWindSpeed%2CsolarRad%2CMeanAirTemperature%2CHumidity',"met_hrly.csv")
+download.file(url = 'https://cli.fusio.net/cli/climate_data/webdata/hly4935.zip', destfile = "knock_airport.zip")
+download.file(url = 'https://cli.fusio.net/cli/climate_data/webdata/hly2375.zip', destfile = "belmullet.zip")
+download.file('https://erddap.marine.ie/erddap/tabledap/IMINewportBuoys.csv?time%2Cairtemperature%2Cbarometric_pressure_1%2Cpyranometer%2Canemometer',"met_raft_2min.csv")
+
+
+unzip("knock_airport.zip")
+unzip("belmullet.zip")
+
+kck <- read.csv("hly4935.csv", skip = 23)
+bel <- read.csv("hly2375.csv", skip = 23)
+fgh <- read.csv("met_hrly.csv", skip = 2,
+                col.names = c('DateTime', 'MSLP','Pre','Wind_knots','SWR_j_cm-2','AirT','RelH'))
+#fgh <- fgh[-1,]
+print(str(fgh))
+print(str(kck))
+print(str(bel))
+```
+
+
+
+Convert factors to numeric 
+```{r}
+fact.col <- names(Filter(is.factor,fgh))[-1]
+#Convert factors to columns
+for(i in fact.col){
+  fgh[,i] <- as.numeric(as.character(fgh[,i]))
+  print(paste0(i,' converted from factor to numeric'))
+}
+print(summary(fgh))
+fact.col <- names(Filter(is.factor,kck))[-1]
+#Convert factors to columns
+for(i in fact.col){
+  kck[,i] <- as.numeric(as.character(kck[,i]))
+  print(paste0(i,' converted from factor to numeric'))
+}
+print(summary(kck))
+```
+
+
+Convert time to Datetime object and inspect for NA's
+Give us the time range
+```{r}
+fgh$DateTime <- as.character(fgh$DateTime) #Convert from factor to character
+fgh$DateTime <- gsub('T',' ',fgh$DateTime) #Remove the T 
+fgh$DateTime <- gsub('Z','',fgh$DateTime) #Remove the Z
+
+#Select which datetime format for formatting the date time
+if(!is.na(as.POSIXct(fgh$DateTime[nrow(fgh)], format = '%d/%m/%Y %H:%M:%S'))){
+  fmt = '%d/%m/%Y %H:%M:%S'
+}else if(!is.na(as.POSIXct(fgh$DateTime[1], format = '%Y-%m-%d %H:%M:%S'))){
+  fmt = '%Y-%m-%d %H:%M:%S'
+}
+
+fgh$DateTime <- as.POSIXct(fgh$DateTime, format = fmt, tz = 'UTC') #Format into datetime
+date.na1 = sum(is.na(fgh$DateTime))
+print(paste0('Start: ', range(fgh$DateTime, na.rm = T)[1], '; End: ', range(fgh$DateTime, na.rm = T)[2]))
+print(paste('No. of NAs in time:',date.na1))
+
+kck$DateTime <- as.POSIXct(kck[,1], format = '%d-%b-%Y %H:%M', tz = 'UTC')
+date.na2 = sum(is.na(kck$DateTime))
+print(paste0('Start: ', range(kck$DateTime, na.rm = T)[1], '; End: ', range(kck$DateTime, na.rm = T)[2]))
+print(paste('No. of NAs in time:',date.na1))
+
+bel$DateTime <- as.POSIXct(bel[,1], format = '%d-%b-%Y %H:%M', tz = 'UTC')
+date.na3 = sum(is.na(bel$DateTime))
+print(paste0('Start: ', range(bel$DateTime, na.rm = T)[1], '; End: ', range(bel$DateTime, na.rm = T)[2]))
+print(paste('No. of NAs in time:',date.na3))
+```
+
+Subset data to previous X years (Edit as necessary)
+```{r}
+start.date = as.POSIXct('2018-01-01',tz = 'UTC')
+stop.date = as.POSIXct('2021-03-01',tz = 'UTC')
+
+fgh.sub = fgh[(fgh$DateTime >= start.date & fgh$DateTime <= stop.date),]
+kck.sub = kck[(kck$DateTime >= start.date & kck$DateTime <= stop.date),]
+bel.sub = bel[(bel$DateTime >= start.date & bel$DateTime <= stop.date),]
+
+print(dim(fgh.sub))
+print(dim(kck.sub))
+print(dim(bel.sub))
+
+```
+
+
+
+Check timesteps - fix if neccessary
+```{r}
+print(dim(fgh.sub))
+print(summary(fgh.sub$DateTime))
+dates = seq.POSIXt(from = range(fgh.sub[,1])[1], to = range(fgh.sub[,1])[2], by = '1 hour')
+dif <- as.numeric(fgh.sub[2:nrow(fgh.sub),'DateTime']-fgh.sub[1:(nrow(fgh.sub)-1),'DateTime'])
+sam <- fgh.sub[order(fgh.sub[,'DateTime']),]
+a = which(duplicated(sam$DateTime))
+if(length(a) >0){
+  sam <- sam[-a,]
+}
+if(length(dates) != nrow(sam)){
+  df = data.frame(DateTime = dates,
+               test =rep(NA,length(dates)), 
+               stringsAsFactors=FALSE) 
+  df = merge(df,sam, by ='DateTime', all.x = T)
+  df$test <- NULL
+  fgh.sub <- df
+  print('Filled in missing dates with NAs')
+}else{
+  fgh.sub <- sam
+}
+dif2 <- fgh.sub[2:nrow(fgh.sub),'DateTime']-fgh.sub[1:(nrow(fgh.sub)-1),'DateTime']
+
+if(max(dif)>1 | min(dif) < 1){
+  par(mfrow=c(2,1))
+  plot(dif, main = 'Time Difference - Raw', ylab = 'hour')
+  plot(dif2, main = 'Time Difference - Corrected', ylab = 'hour')
+  print('Timestep has been corrected')
+}
+sam <- NULL
+
+##### Knock
+print(dim(kck.sub))
+print(summary(kck.sub$DateTime))
+dates = seq.POSIXt(from = range(kck.sub$DateTime)[1], to = range(kck.sub$DateTime)[2], by = '1 hour')
+dif <- as.numeric(kck.sub[2:nrow(kck.sub),'DateTime']-kck.sub[1:(nrow(kck.sub)-1),'DateTime'])
+sam <- kck.sub[order(kck.sub[,'DateTime']),]
+a = which(duplicated(sam$DateTime))
+if(length(a) >0){
+  sam <- sam[-a,]
+}
+if(length(dates) != nrow(sam)){
+  df = data.frame(DateTime = dates,
+               test =rep(NA,length(dates)), 
+               stringsAsFactors=FALSE) 
+  df = merge(df,sam, by ='DateTime', all.x = T)
+  df$test <- NULL
+  kck.sub <- df
+  print('Filled in missing dates with NAs')
+}else{
+  kck.sub <- sam
+}
+dif2 <- kck.sub[2:nrow(kck.sub),'DateTime']-kck.sub[1:(nrow(kck.sub)-1),'DateTime']
+
+if(max(dif)>1 | min(dif) < 1){
+  par(mfrow=c(2,1))
+  plot(dif, main = 'Time Difference - Raw', ylab = 'hour')
+  plot(dif2, main = 'Time Difference - Corrected', ylab = 'hour')
+  print('Timestep has been corrected')
+}
+sam <- NULL
+
+###Belmullet
+print(dim(bel.sub))
+print(summary(bel.sub$DateTime))
+dates = seq.POSIXt(from = range(bel.sub$DateTime)[1], to = range(bel.sub$DateTime)[2], by = '1 hour')
+dif <- as.numeric(bel.sub[2:nrow(bel.sub),'DateTime']-bel.sub[1:(nrow(bel.sub)-1),'DateTime'])
+sam <- bel.sub[order(bel.sub[,'DateTime']),]
+a = which(duplicated(sam$DateTime))
+if(length(a) >0){
+  sam <- sam[-a,]
+}
+if(length(dates) != nrow(sam)){
+  df = data.frame(DateTime = dates,
+               test =rep(NA,length(dates)), 
+               stringsAsFactors=FALSE) 
+  df = merge(df,sam, by ='DateTime', all.x = T)
+  df$test <- NULL
+  bel.sub <- df
+  print('Filled in missing dates with NAs')
+}else{
+  bel.sub <- sam
+}
+dif2 <- bel.sub[2:nrow(bel.sub),'DateTime']-bel.sub[1:(nrow(bel.sub)-1),'DateTime']
+
+if(max(dif)>1 | min(dif) < 1){
+  par(mfrow=c(2,1))
+  plot(dif, main = 'Time Difference - Raw', ylab = 'hour')
+  plot(dif2, main = 'Time Difference - Corrected', ylab = 'hour')
+  print('Timestep has been corrected')
+}
+sam <- NULL
+
+
+print(dim(fgh.sub))
+print(dim(kck.sub))
+print(dim(bel.sub))
+
+
+```
+
+Add cloud cover from Knock
+
+```{r}
+fgh.sub$CC <- kck.sub$clamt/8
+ind = which(fgh.sub$CC > 1)
+fgh.sub$CC[ind] <- 1
+hist(fgh.sub$CC)
+print(summary(fgh.sub))
+```
+
+
+
+Replace Nan with NA
+```{r}
+for(i in 2:ncol(fgh.sub)){
+  n = which(is.nan(fgh.sub[,i]))
+  #print(n) ##To check the file
+#}
+  if(length(n) == 0){
+    print(paste('No NaN in',colnames(fgh.sub)[i]))
+    next
+  }else{
+    fgh.sub[n,i] <- NA
+    print(paste('NaN replaced with NAs in',colnames(fgh.sub)[i]))
+  }
+}
+```
+
+
+Take out unneccessary columns
+
+```{r}
+clm <- c(0)
+for(i in 1:ncol(fgh.sub)){
+  if(sum(is.na(fgh.sub[,i]))== nrow(fgh.sub)){
+    clm <- append(clm,i)
+  }
+}
+if(length(clm)==1){
+  print("No unneccessary columns")
+}else if(length(clm)>1){
+  fgh.sub <- fgh.sub[,-clm]
+  print(paste("Removed column ", colnames(fgh.sub)[i]))
+}
+
+```
+Fill MSLP
+```{r}
+plot(fgh.sub$MSLP, kck.sub$msl)
+plot(fgh.sub$MSLP, bel.sub$msl)
+fgh.sub[(is.na(fgh.sub$MSLP)),'MSLP'] <- kck.sub$msl[(is.na(fgh.sub$MSLP))]
+fgh.sub$MSLP<-fgh.sub$MSLP*100
+
+```
+
+Fill Precipitation
+```{r}
+plot(fgh.sub$Pre, kck.sub$rain)
+cor(fgh.sub$Pre, kck.sub$rain, method = 'pearson', use = 'complete.obs')
+plot(fgh.sub$Pre, bel.sub$rain)
+cor(fgh.sub$Pre, bel.sub$rain, method = 'pearson', use = 'complete.obs')
+
+fgh.dy <- aggregate(list(rain = fgh.sub$Pre), by = list(DateTime = cut(fgh.sub$DateTime, '1 day')), sum)
+kck.dy <- aggregate(list(rain = kck.sub$rain), by = list(DateTime = cut(kck.sub$DateTime, '1 day')), sum)
+bel.dy <- aggregate(list(rain = bel.sub$rain), by = list(DateTime = cut(bel.sub$DateTime, '1 day')), sum)
+cor(fgh.dy$rain, kck.dy$rain, method = 'pearson', use = 'complete.obs')
+cor(fgh.dy$rain, bel.dy$rain, method = 'pearson', use = 'complete.obs')
+
+
+fgh.sub[(is.na(fgh.sub$Pre)),'Pre'] <- kck.sub$rain[(is.na(fgh.sub$Pre))]
+
+```
+Fill wind and convert from knots to m/s
+```{r}
+plot(fgh.sub$Wind_knots, kck.sub$wdsp)
+cor(fgh.sub$Wind_knots, kck.sub$wdsp, method = 'pearson', use = 'complete.obs')
+plot(fgh.sub$Wind_knots, bel.sub$wdsp)
+cor(fgh.sub$Wind_knots, bel.sub$wdsp, method = 'pearson', use = 'complete.obs')
+
+fgh.sub[(is.na(fgh.sub$Wind_knots)),'Wind_knots'] <- kck.sub$wdsp[(is.na(fgh.sub$Wind_knots))]
+fgh.sub$wind_ms <- fgh.sub$Wind_knots * 0.514444444
+```
+Correct negative Solar radiation.
+
+Fill NA's and convert to W/m2
+
+```{r}
+fgh.sub$SWR_j_cm.2[fgh.sub$SWR_j_cm.2 <0] <- NA
+fgh.sub$SWR_j_cm.2 <- na.approx(fgh.sub$SWR_j_cm.2)
+
+fgh.sub$SWR_Wm2 <- (fgh.sub$SWR_j_cm.2 * 10000) / (60 * 60) # j/cm2 -> W/m2
+
+```
+Fill Air temperature
+```{r}
+plot(fgh.sub$AirT, kck.sub$temp)
+cor(fgh.sub$AirT, kck.sub$temp, method = 'pearson', use = 'complete.obs')
+plot(fgh.sub$AirT, bel.sub$temp)
+cor(fgh.sub$AirT, bel.sub$temp, method = 'pearson', use = 'complete.obs')
+
+fgh.sub[(is.na(fgh.sub$AirT)),'AirT'] <- kck.sub$temp[(is.na(fgh.sub$AirT))]
+```
+
+Fill Relative Humidity
+```{r}
+plot(fgh.sub$RelH, kck.sub$rhum)
+cor(fgh.sub$RelH, kck.sub$rhum, method = 'pearson', use = 'complete.obs')
+plot(fgh.sub$RelH, bel.sub$rhum)
+cor(fgh.sub$RelH, bel.sub$rhum, method = 'pearson', use = 'complete.obs')
+
+fgh.sub[(is.na(fgh.sub$RelH)),'RelH'] <- kck.sub$rhum[(is.na(fgh.sub$RelH))]
+```
+Fill Cloud data
+```{r}
+fgh.sub$CC <- zoo::na.approx(fgh.sub$CC)
+summary(fgh.sub)
+```
+
+
+
+Quick plots of each variable
+```{r}
+for(i in 2:ncol(fgh.sub)){
+  plot(fgh.sub[,1], fgh.sub[,i], type ='l', main = colnames(fgh.sub)[i], xlab = 'DateTime')
+}
+```
+
+Format data and write file for GOTM
+- Leaves wind in one column and inputs 0 for v10
+- Adds all variables and will then need to update gotm.yaml file accordingly
+
+```{r}
+fgh.sub$v10 <- 0
+got_met <- fgh.sub[,c('DateTime','wind_ms','v10','MSLP','AirT','RelH','CC', "SWR_Wm2", "Pre")]
+got_met$Pre <- got_met$Pre * 2.77778e-7 # convert to m/s
+colnames(got_met) <- c("!DateTime", "u10", "v10", "airp", "airt", "hum", "cloud", "swr", "precip")
+
+for(i in 2:ncol(got_met)){
+  plot(got_met[,1], got_met[,i],type ='l', main = paste0(colnames(got_met)[i]))
+}
+got_met[,1] <- format(got_met[,1], format = '%Y-%m-%d %H:%M:%S')
+write.table(got_met,'met_obs.dat', row.names = F, col.names = TRUE, sep = '\t', quote = F)
+
+write.table(got_met, file = "H:/Elvira/Lake modelling/GOTM_EdeE/GOTM_EdeE/feeagh_2020/met_obs.dat",row.names = F, col.names = TRUE, sep = '\t', quote = F)
+
+```
+
+Update GOTM yaml file with met column numbers and humidity method. Need the 'gotm.yaml' file to be in the same directory as this RMarkdown file. Column indexing treats datetime column as 0.
+Set up gotm to use relative humidity rather than dewpoint temperature.
+
+```{r}
+library(gotmtools)
+
+gotm_yaml <- "H:/Elvira/Lake modelling/GOTM_EdeE/GOTM_EdeE/feeagh_2020/gotm.yaml"
+
+input_yaml(file = gotm_yaml, label = 'u10', key = 'column', value = (which(colnames(got_met) == "u10") - 1))
+input_yaml(file = gotm_yaml, label = 'v10', key = 'column', value = (which(colnames(got_met) == "v10") - 1))
+input_yaml(file = gotm_yaml, label = 'airp', key = 'column', value = (which(colnames(got_met) == "airp") - 1))
+input_yaml(file = gotm_yaml, label = 'airt', key = 'column', value = (which(colnames(got_met) == "airt") - 1))
+input_yaml(file = gotm_yaml, label = 'hum', key = 'column', value = (which(colnames(got_met) == "hum") - 1))
+input_yaml(file = gotm_yaml, label = 'hum', key = 'type', value = 1)
+input_yaml(file = gotm_yaml, label = 'cloud', key = 'column', value = (which(colnames(got_met) == "cloud") - 1))
+input_yaml(file = gotm_yaml, label = 'swr', key = 'column', value = (which(colnames(got_met) == "swr") - 1))
+input_yaml(file = gotm_yaml, label = 'precip', key = 'column', value = (which(colnames(got_met) == "precip") - 1))
+
+```
+
+Enter the new met file name
+
+```{r}
+input_yaml(file = gotm_yaml, label = 'u10', key = 'file', value = "met_obs.dat")
+input_yaml(file = gotm_yaml, label = 'v10', key = 'file', value = "met_obs.dat")
+input_yaml(file = gotm_yaml, label = 'airp', key = 'file', value = "met_obs.dat")
+input_yaml(file = gotm_yaml, label = 'airt', key = 'file', value = "met_obs.dat")
+input_yaml(file = gotm_yaml, label = 'hum', key = 'file', value = "met_obs.dat")
+input_yaml(file = gotm_yaml, label = 'cloud', key = 'file', value = "met_obs.dat")
+input_yaml(file = gotm_yaml, label = 'swr', key = 'file', value = "met_obs.dat")
+input_yaml(file = gotm_yaml, label = 'precip', key = 'file', value = "met_obs.dat")
+```
+
+
+
